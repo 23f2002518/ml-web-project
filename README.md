@@ -3,7 +3,7 @@
 ## Project Information
 **Project Title:** ML Web Project
 
-**Student Name:** Rahul Singh  
+**Student Name:** Sachin Kumar Ray  
 **Student ID:** 23f2002518
 
 ## Project Description
