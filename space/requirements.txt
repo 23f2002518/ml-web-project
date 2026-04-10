@@ -2,7 +2,6 @@ gradio==4.44.1
 huggingface_hub<1.0
 librosa>=0.10.2
 numpy>=1.26
-pandas>=2.2
 soundfile>=0.12.1
 timm>=1.0.9
 torch>=2.2

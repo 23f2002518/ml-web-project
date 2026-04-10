@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="180" viewBox="0 0 920 180" role="img" aria-label="Custom CNN architecture">
+  <rect width="920" height="180" rx="18" fill="#f8fafc"/>
+  <rect x="24" y="60" width="110" height="60" rx="14" fill="#dbeafe"/>
+  <rect x="164" y="60" width="122" height="60" rx="14" fill="#bfdbfe"/>
+  <rect x="316" y="60" width="122" height="60" rx="14" fill="#93c5fd"/>
+  <rect x="468" y="60" width="122" height="60" rx="14" fill="#60a5fa"/>
+  <rect x="620" y="60" width="92" height="60" rx="14" fill="#38bdf8"/>
+  <rect x="742" y="60" width="154" height="60" rx="14" fill="#22c55e"/>
+  <text x="79" y="96" text-anchor="middle" font-size="16">Mel input</text>
+  <text x="225" y="96" text-anchor="middle" font-size="16">64 filters + SE</text>
+  <text x="377" y="96" text-anchor="middle" font-size="16">128 filters + SE</text>
+  <text x="529" y="96" text-anchor="middle" font-size="16">256 filters + SE</text>
+  <text x="666" y="96" text-anchor="middle" font-size="16">GAP</text>
+  <text x="819" y="96" text-anchor="middle" font-size="16">FC head / 10 classes</text>
+  <line x1="134" y1="90" x2="164" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="286" y1="90" x2="316" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="438" y1="90" x2="468" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="590" y1="90" x2="620" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="712" y1="90" x2="742" y2="90" stroke="#334155" stroke-width="3"/>
+</svg>

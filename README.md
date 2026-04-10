@@ -104,35 +104,33 @@ This recreates the preserved EfficientNet and AST runs from the archived noteboo
 
 ## Report Generation
 
-Generate the HTML report and supporting assets with:
+The report pipeline now generates a Typst source document plus SVG figure assets, then compiles the final PDF directly with Typst. This avoids the page-layout failures that occurred with the earlier HTML-to-WeasyPrint flow.
+
+Generate the report with:
 
 ```bash
 python scripts/generate_report.py \
   --archive-notebook ../dl-23f2002518-notebook-t12026(1).ipynb \
-  --results-zip ../results.zip
+  --results-zip ../results.zip \
+  --typst-bin /path/to/typst
 ```
 
 The script writes:
 
-- HTML report in `report/generated/report.html`
-- PDF target path `report/generated/23f2002518_DG_T12026.pdf`
+- Typst source in `report/generated/report.typ`
+- SVG figure assets in `report/generated/figures/`
+- PDF in `report/generated/23f2002518_DG_T12026.pdf`
+- A small compatibility notice in `report/generated/report.html`
 
-The best local export path available in this environment was WeasyPrint:
-
-```bash
-python3 -m venv /tmp/report-venv
-/tmp/report-venv/bin/pip install weasyprint
-/tmp/report-venv/bin/python - <<'PY'
-from weasyprint import HTML
-HTML('report/generated/report.html').write_pdf('report/generated/23f2002518_DG_T12026.pdf')
-PY
-```
+If `typst` is already on your `PATH`, the `--typst-bin` flag is optional. The recommended compiler source is the official Typst release binary for Linux.
 
 ## Hugging Face Space
 
-The ready-to-publish Space bundle lives in [space/](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/space). It serves a single EfficientNet checkpoint for fast CPU inference and keeps the heavier ensemble in the notebook-only workflow.
+The ready-to-publish Space bundle lives in [space/](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/space). It serves a single EfficientNet checkpoint for fast CPU inference and keeps the heavier ensemble in the notebook-only workflow. The live UI now returns:
 
-Publish it after authenticating with a Hugging Face write token:
+- Ranked genre confidences through a `Label` output
+- The full probability distribution as JSON text
+- A compact text summary
 
 ```bash
 cd space

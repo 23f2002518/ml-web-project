@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="170" viewBox="0 0 920 170" role="img" aria-label="Project pipeline">
+  <rect width="920" height="170" rx="18" fill="#fff7ed"/>
+  <rect x="20" y="58" width="132" height="54" rx="14" fill="#fed7aa"/>
+  <rect x="188" y="58" width="162" height="54" rx="14" fill="#fdba74"/>
+  <rect x="386" y="58" width="164" height="54" rx="14" fill="#fb923c"/>
+  <rect x="586" y="58" width="136" height="54" rx="14" fill="#f97316"/>
+  <rect x="758" y="58" width="142" height="54" rx="14" fill="#ea580c"/>
+  <text x="86" y="91" text-anchor="middle" font-size="16">Stem folders</text>
+  <text x="269" y="91" text-anchor="middle" font-size="16">Mashup + ESC-50 noise</text>
+  <text x="468" y="91" text-anchor="middle" font-size="16">Mel / AST features</text>
+  <text x="654" y="91" text-anchor="middle" font-size="16">Three models</text>
+  <text x="829" y="91" text-anchor="middle" font-size="16">TTA ensemble</text>
+  <line x1="152" y1="85" x2="188" y2="85" stroke="#9a3412" stroke-width="3"/>
+  <line x1="350" y1="85" x2="386" y2="85" stroke="#9a3412" stroke-width="3"/>
+  <line x1="550" y1="85" x2="586" y2="85" stroke="#9a3412" stroke-width="3"/>
+  <line x1="722" y1="85" x2="758" y2="85" stroke="#9a3412" stroke-width="3"/>
+</svg>

@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
+import subprocess
+import textwrap
 from collections import Counter
 from pathlib import Path
 from zipfile import ZipFile
@@ -10,8 +13,6 @@ from zipfile import ZipFile
 
 EFFNET_PATTERN = re.compile(r"Ep\s*(\d+): TF1=(\d+\.\d+), VF1=(\d+\.\d+)")
 AST_PATTERN = re.compile(r"Ep\s*(\d+): TF1=(\d+\.\d+), VF1=(\d+\.\d+)")
-SUBMISSION_PATTERN = re.compile(r"^\s*(\d+)\s+([a-z]+)\s*$", re.MULTILINE)
-
 
 GENRES = [
     "blues",
@@ -26,10 +27,49 @@ GENRES = [
     "rock",
 ]
 
+REPORT_HTML_NOTICE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Messy Mashup Report</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      max-width: 760px;
+      margin: 48px auto;
+      padding: 0 24px;
+      line-height: 1.55;
+      color: #0f172a;
+      background: #f8fafc;
+    }
+    code {
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 6px;
+    }
+    a {
+      color: #2563eb;
+    }
+  </style>
+</head>
+<body>
+  <h1>Messy Mashup Report</h1>
+  <p>
+    The canonical report source is now <code>report.typ</code>, and the final PDF is
+    <code>23f2002518_DG_T12026.pdf</code>.
+  </p>
+  <p>
+    Open <a href="./23f2002518_DG_T12026.pdf">the generated PDF</a> for the final academic report,
+    or inspect <a href="./report.typ">the Typst source</a> for the editable source document.
+  </p>
+</body>
+</html>
+"""
+
 
 def load_notebook(path: Path) -> dict:
-    with path.open() as f:
-        return json.load(f)
+    with path.open() as handle:
+        return json.load(handle)
 
 
 def cell_text(cell: dict) -> str:
@@ -48,13 +88,13 @@ def extract_histories(notebook: dict) -> dict[str, list[tuple[int, float, float]
         text = cell_text(cell)
         if idx == 8:
             histories["effnet"] = [
-                (int(m.group(1)), float(m.group(2)), float(m.group(3)))
-                for m in EFFNET_PATTERN.finditer(text)
+                (int(match.group(1)), float(match.group(2)), float(match.group(3)))
+                for match in EFFNET_PATTERN.finditer(text)
             ]
         if idx == 9:
             histories["ast"] = [
-                (int(m.group(1)), float(m.group(2)), float(m.group(3)))
-                for m in AST_PATTERN.finditer(text)
+                (int(match.group(1)), float(match.group(2)), float(match.group(3)))
+                for match in AST_PATTERN.finditer(text)
             ]
     return histories
 
@@ -69,19 +109,28 @@ def extract_submission_distribution(results_zip: Path) -> Counter:
     return counter
 
 
+def best_epoch(points: list[tuple[int, float, float]]) -> tuple[int, float]:
+    epoch, _, value = max(points, key=lambda item: item[2])
+    return epoch, value
+
+
 def sparkline_svg(
     points: list[tuple[int, float, float]],
     title: str,
     stroke_a: str,
     stroke_b: str,
 ) -> str:
-    width = 460
-    height = 170
-    padding = 20
+    width = 920
+    height = 280
+    padding = 34
     if not points:
-        return "<div>Metrics unavailable.</div>"
+        return (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
+            f'role="img" aria-label="{title}"><rect width="{width}" height="{height}" '
+            'rx="18" fill="#f8fafc"/><text x="40" y="48" fill="#0f172a" font-size="22" '
+            'font-family="Arial, sans-serif">Metrics unavailable.</text></svg>'
+        )
 
-    xs = [p[0] for p in points]
     ys_train = [p[1] for p in points]
     ys_val = [p[2] for p in points]
     all_y = ys_train + ys_val
@@ -98,344 +147,256 @@ def sparkline_svg(
         return " ".join(coords)
 
     return f"""
-    <svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{title}">
-      <rect x="0" y="0" width="{width}" height="{height}" rx="18" fill="#f8fafc"/>
-      <line x1="{padding}" y1="{height-padding}" x2="{width-padding}" y2="{height-padding}" stroke="#cbd5e1" stroke-width="2"/>
-      <line x1="{padding}" y1="{padding}" x2="{padding}" y2="{height-padding}" stroke="#cbd5e1" stroke-width="2"/>
-      <polyline fill="none" stroke="{stroke_a}" stroke-width="4" points="{project(ys_train)}"/>
-      <polyline fill="none" stroke="{stroke_b}" stroke-width="4" points="{project(ys_val)}"/>
-      <text x="{padding}" y="18" fill="#0f172a" font-size="14" font-family="Arial, sans-serif">{title}</text>
-      <text x="{width-180}" y="18" fill="{stroke_a}" font-size="12" font-family="Arial, sans-serif">train F1</text>
-      <text x="{width-90}" y="18" fill="{stroke_b}" font-size="12" font-family="Arial, sans-serif">val F1</text>
-    </svg>
-    """
+<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="{title}">
+  <rect x="0" y="0" width="{width}" height="{height}" rx="18" fill="#f8fafc"/>
+  <line x1="{padding}" y1="{height-padding}" x2="{width-padding}" y2="{height-padding}" stroke="#cbd5e1" stroke-width="3"/>
+  <line x1="{padding}" y1="{padding}" x2="{padding}" y2="{height-padding}" stroke="#cbd5e1" stroke-width="3"/>
+  <polyline fill="none" stroke="{stroke_a}" stroke-width="5" points="{project(ys_train)}"/>
+  <polyline fill="none" stroke="{stroke_b}" stroke-width="5" points="{project(ys_val)}"/>
+  <text x="{padding}" y="28" fill="#0f172a" font-size="24" font-family="Arial, sans-serif">{title}</text>
+  <text x="{width-240}" y="28" fill="{stroke_a}" font-size="18" font-family="Arial, sans-serif">train F1</text>
+  <text x="{width-120}" y="28" fill="{stroke_b}" font-size="18" font-family="Arial, sans-serif">val F1</text>
+</svg>
+"""
 
 
 def architecture_svg() -> str:
     return """
-    <svg width="760" height="135" viewBox="0 0 760 135" role="img" aria-label="Custom CNN architecture">
-      <rect width="760" height="135" rx="18" fill="#f8fafc"/>
-      <rect x="18" y="38" width="90" height="50" rx="12" fill="#dbeafe"/>
-      <rect x="132" y="38" width="100" height="50" rx="12" fill="#bfdbfe"/>
-      <rect x="256" y="38" width="100" height="50" rx="12" fill="#93c5fd"/>
-      <rect x="380" y="38" width="100" height="50" rx="12" fill="#60a5fa"/>
-      <rect x="504" y="38" width="86" height="50" rx="12" fill="#38bdf8"/>
-      <rect x="614" y="38" width="126" height="50" rx="12" fill="#22c55e"/>
-      <text x="63" y="67" text-anchor="middle" font-size="12">Mel input</text>
-      <text x="182" y="67" text-anchor="middle" font-size="12">64 + SE</text>
-      <text x="306" y="67" text-anchor="middle" font-size="12">128 + SE</text>
-      <text x="430" y="67" text-anchor="middle" font-size="12">256 + SE</text>
-      <text x="547" y="67" text-anchor="middle" font-size="12">GAP</text>
-      <text x="677" y="67" text-anchor="middle" font-size="12">FC head / 10 classes</text>
-      <line x1="108" y1="63" x2="132" y2="63" stroke="#334155" stroke-width="2.5"/>
-      <line x1="232" y1="63" x2="256" y2="63" stroke="#334155" stroke-width="2.5"/>
-      <line x1="356" y1="63" x2="380" y2="63" stroke="#334155" stroke-width="2.5"/>
-      <line x1="480" y1="63" x2="504" y2="63" stroke="#334155" stroke-width="2.5"/>
-      <line x1="590" y1="63" x2="614" y2="63" stroke="#334155" stroke-width="2.5"/>
-    </svg>
-    """
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="180" viewBox="0 0 920 180" role="img" aria-label="Custom CNN architecture">
+  <rect width="920" height="180" rx="18" fill="#f8fafc"/>
+  <rect x="24" y="60" width="110" height="60" rx="14" fill="#dbeafe"/>
+  <rect x="164" y="60" width="122" height="60" rx="14" fill="#bfdbfe"/>
+  <rect x="316" y="60" width="122" height="60" rx="14" fill="#93c5fd"/>
+  <rect x="468" y="60" width="122" height="60" rx="14" fill="#60a5fa"/>
+  <rect x="620" y="60" width="92" height="60" rx="14" fill="#38bdf8"/>
+  <rect x="742" y="60" width="154" height="60" rx="14" fill="#22c55e"/>
+  <text x="79" y="96" text-anchor="middle" font-size="16">Mel input</text>
+  <text x="225" y="96" text-anchor="middle" font-size="16">64 filters + SE</text>
+  <text x="377" y="96" text-anchor="middle" font-size="16">128 filters + SE</text>
+  <text x="529" y="96" text-anchor="middle" font-size="16">256 filters + SE</text>
+  <text x="666" y="96" text-anchor="middle" font-size="16">GAP</text>
+  <text x="819" y="96" text-anchor="middle" font-size="16">FC head / 10 classes</text>
+  <line x1="134" y1="90" x2="164" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="286" y1="90" x2="316" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="438" y1="90" x2="468" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="590" y1="90" x2="620" y2="90" stroke="#334155" stroke-width="3"/>
+  <line x1="712" y1="90" x2="742" y2="90" stroke="#334155" stroke-width="3"/>
+</svg>
+"""
 
 
 def pipeline_svg() -> str:
     return """
-    <svg width="760" height="125" viewBox="0 0 760 125" role="img" aria-label="Project pipeline">
-      <rect width="760" height="125" rx="18" fill="#fff7ed"/>
-      <rect x="16" y="34" width="118" height="46" rx="12" fill="#fed7aa"/>
-      <rect x="158" y="34" width="132" height="46" rx="12" fill="#fdba74"/>
-      <rect x="314" y="34" width="138" height="46" rx="12" fill="#fb923c"/>
-      <rect x="476" y="34" width="112" height="46" rx="12" fill="#f97316"/>
-      <rect x="612" y="34" width="132" height="46" rx="12" fill="#ea580c"/>
-      <text x="75" y="62" text-anchor="middle" font-size="12">Stem folders</text>
-      <text x="224" y="62" text-anchor="middle" font-size="12">Mashup + ESC-50 noise</text>
-      <text x="383" y="62" text-anchor="middle" font-size="12">Mel / AST features</text>
-      <text x="532" y="62" text-anchor="middle" font-size="12">Three models</text>
-      <text x="678" y="62" text-anchor="middle" font-size="12">TTA ensemble</text>
-      <line x1="134" y1="57" x2="158" y2="57" stroke="#9a3412" stroke-width="2.5"/>
-      <line x1="290" y1="57" x2="314" y2="57" stroke="#9a3412" stroke-width="2.5"/>
-      <line x1="452" y1="57" x2="476" y2="57" stroke="#9a3412" stroke-width="2.5"/>
-      <line x1="588" y1="57" x2="612" y2="57" stroke="#9a3412" stroke-width="2.5"/>
-    </svg>
-    """
-
-
-def build_report_html(histories: dict[str, list[tuple[int, float, float]]], distribution: Counter) -> str:
-    effnet_best = max(v for _, _, v in histories["effnet"])
-    ast_best = max(v for _, _, v in histories["ast"])
-    html_distribution = "".join(
-        f"<tr><td>{genre}</td><td>{distribution.get(genre, 0)}</td></tr>" for genre in GENRES
-    )
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Messy Mashup Report</title>
-  <style>
-    @page {{
-      size: A4;
-      margin: 10mm;
-    }}
-    :root {{
-      --ink: #0f172a;
-      --muted: #475569;
-      --paper: #f8fafc;
-      --card: #ffffff;
-      --blue: #2563eb;
-      --teal: #0f766e;
-      --orange: #c2410c;
-      --border: #cbd5e1;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      font-family: "Segoe UI", Arial, sans-serif;
-      background: linear-gradient(180deg, #e0f2fe 0%, #f8fafc 35%, #fff7ed 100%);
-      color: var(--ink);
-      margin: 0;
-      padding: 12px;
-    }}
-    .page {{
-      max-width: 1100px;
-      margin: 0 auto;
-      background: rgba(255,255,255,0.65);
-    }}
-    .hero {{
-      background: linear-gradient(135deg, #0f172a, #1d4ed8 55%, #0f766e);
-      color: white;
-      border-radius: 22px;
-      padding: 24px;
-      margin-bottom: 14px;
-    }}
-    .hero h1 {{ margin: 0 0 8px; font-size: 30px; }}
-    .hero p {{ margin: 6px 0; line-height: 1.35; max-width: 860px; font-size: 13px; }}
-    .grid {{
-      display: grid;
-      grid-template-columns: repeat(12, 1fr);
-      gap: 12px;
-    }}
-    .card {{
-      background: var(--card);
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      border-radius: 18px;
-      padding: 14px;
-      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-    }}
-    .span-4 {{ grid-column: span 4; }}
-    .span-5 {{ grid-column: span 5; }}
-    .span-6 {{ grid-column: span 6; }}
-    .span-7 {{ grid-column: span 7; }}
-    .span-12 {{ grid-column: span 12; }}
-    h2 {{ margin: 0 0 8px; font-size: 20px; }}
-    h3 {{ margin: 0 0 8px; font-size: 16px; }}
-    p, li {{ line-height: 1.4; color: var(--muted); font-size: 13px; }}
-    ul {{ margin: 8px 0 0 18px; }}
-    table {{
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 8px;
-      font-size: 12px;
-    }}
-    th, td {{
-      border-bottom: 1px solid var(--border);
-      padding: 5px 4px;
-      text-align: left;
-    }}
-    .metric {{
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--ink);
-    }}
-    .metric-label {{
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-    }}
-    .callout {{
-      background: #eff6ff;
-      border-left: 5px solid var(--blue);
-      padding: 10px 12px;
-      border-radius: 12px;
-      color: var(--ink);
-    }}
-    .warning {{
-      background: #fff7ed;
-      border-left: 5px solid var(--orange);
-    }}
-    .mono {{
-      font-family: "SFMono-Regular", Consolas, monospace;
-      font-size: 13px;
-    }}
-    .small {{
-      font-size: 12px;
-    }}
-    @media print {{
-      body {{ padding: 0; background: white; }}
-      .page {{ max-width: none; }}
-      .card {{ box-shadow: none; }}
-    }}
-  </style>
-</head>
-<body>
-  <div class="page">
-    <section class="hero">
-      <h1>Messy Mashup</h1>
-      <p><strong>Student:</strong> Sachin Kumar Ray (23F2002518)</p>
-      <p>
-        This project tackles noisy music genre classification for the IITM Deep Learning &amp; Generative AI project.
-        The final system combines synthetic mashup generation, ESC-50 noise injection, spectrogram-based deep models,
-        and test-time augmentation for robust leaderboard inference.
-      </p>
-      <p>
-        The offline Kaggle solution is ensemble-based. The live deployment bundle serves a single EfficientNet classifier
-        to keep CPU latency practical on Hugging Face Spaces.
-      </p>
-    </section>
-
-    <section class="grid">
-      <div class="card span-4">
-        <div class="metric-label">Best archived EfficientNet val F1</div>
-        <div class="metric">{effnet_best:.4f}</div>
-        <p class="small">Recovered from the executed Kaggle notebook archive in the local workspace.</p>
-      </div>
-      <div class="card span-4">
-        <div class="metric-label">Best archived AST val F1</div>
-        <div class="metric">{ast_best:.4f}</div>
-        <p class="small">Recovered from the same archived Kaggle execution snapshot.</p>
-      </div>
-      <div class="card span-4">
-        <div class="metric-label">Final Kaggle score</div>
-        <div class="metric">0.85477</div>
-        <p class="small">Reference score from notebook version V26 supplied by the student.</p>
-      </div>
-
-      <div class="card span-7">
-        <h2>Problem and Data</h2>
-        <p>
-          The task is to predict one of 10 music genres for each test clip in the Messy Mashup challenge. Training clips
-          are provided as genre-specific stem folders, while the test split contains mixed and noisy audio where simple
-          source-separation assumptions break down.
-        </p>
-        <div class="callout">
-          Primary metric: macro F1 score. The pipeline uses mashup synthesis, ESC-50 noise injection, and TTA to reduce train-test mismatch.
-        </div>
-      </div>
-
-      <div class="card span-5">
-        <h2>Model Set</h2>
-        <table>
-          <thead>
-            <tr><th>Model</th><th>Type</th><th>Status</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>EfficientNet-B0</td><td>Pretrained CNN</td><td>Archived metrics + checkpoints available</td></tr>
-            <tr><td>Custom CNN + SE</td><td>From scratch</td><td>Code preserved, archived metrics unavailable</td></tr>
-            <tr><td>AST</td><td>Pretrained transformer</td><td>Archived metrics + checkpoints available</td></tr>
-          </tbody>
-        </table>
-        <p class="small">
-          The scratch-model code remains in the canonical notebook to satisfy the course requirement, but the current local snapshot only
-          preserved executed results for EfficientNet and AST.
-        </p>
-      </div>
-
-      <div class="card span-12">
-        <h2>Pipeline</h2>
-        {pipeline_svg()}
-      </div>
-
-      <div class="card span-6">
-        <h2>EfficientNet Training Curve</h2>
-        {sparkline_svg(histories["effnet"], "EfficientNet F1 progression", "#2563eb", "#0f766e")}
-      </div>
-
-      <div class="card span-6">
-        <h2>AST Training Curve</h2>
-        {sparkline_svg(histories["ast"], "AST F1 progression", "#7c3aed", "#ea580c")}
-      </div>
-
-      <div class="card span-12">
-        <h2>Custom CNN Architecture</h2>
-        {architecture_svg()}
-        <p>
-          The scratch baseline uses stacked convolutional blocks with squeeze-and-excitation attention, global pooling, and a compact classification head.
-        </p>
-      </div>
-
-      <div class="card span-6">
-        <h2>Comparative Analysis</h2>
-        <table>
-          <thead>
-            <tr><th>Model</th><th>Best val F1</th><th>Remarks</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>EfficientNet-B0</td><td>{effnet_best:.4f}</td><td>Strongest preserved checkpoint, best live deployment candidate</td></tr>
-            <tr><td>Custom CNN + SE</td><td>Pending archival rerun</td><td>Notebook code present, no executed local metrics captured</td></tr>
-            <tr><td>AST</td><td>{ast_best:.4f}</td><td>Strong transformer baseline, useful diversity in ensemble</td></tr>
-          </tbody>
-        </table>
-        <p>
-          The final Kaggle inference path uses weighted averaging with higher weight on EfficientNet because it showed the best preserved validation performance.
-        </p>
-        <p class="small">
-          Final leaderboard reference used in this report: notebook <strong>V26</strong>, score <strong>0.85477</strong>.
-        </p>
-      </div>
-
-      <div class="card span-6">
-        <h2>Submission Distribution</h2>
-        <table>
-          <thead>
-            <tr><th>Genre</th><th>Count</th></tr>
-          </thead>
-          <tbody>
-            {html_distribution}
-          </tbody>
-        </table>
-        <p class="small">
-          Distribution extracted from the bundled `submission.csv` inside the archived Kaggle outputs.
-        </p>
-      </div>
-
-      <div class="card span-7">
-        <h2>Deployment</h2>
-        <p>
-          The deployment bundle uses a single EfficientNet checkpoint and the same mel-spectrogram preprocessing as the notebook.
-          The app returns the predicted label, per-class probabilities, and a compact confidence table suitable for demo evaluation.
-        </p>
-        <ul>
-          <li>Runtime target: Hugging Face Spaces with Gradio</li>
-          <li>Model served live: EfficientNet-B0 checkpoint `effnet_f1.pt`</li>
-          <li>Reason: lower CPU cost than the full ensemble while preserving strong validation quality</li>
-        </ul>
-      </div>
-
-      <div class="card span-5">
-        <h2>Error Analysis and Risks</h2>
-        <div class="callout warning">
-          The preserved archive does not include executed scratch-model metrics. The report therefore distinguishes between
-          archived evidence and notebook-defined experimental intent instead of inventing missing numbers.
-        </div>
-        <ul>
-          <li>Genre confusions are most likely between acoustically similar classes such as `rock`, `metal`, and `pop`.</li>
-          <li>Heavy overlap, percussion bleed, and environmental noise remain the main failure sources.</li>
-          <li>Future work: rerun the custom CNN, add waveform models, and calibrate the ensemble weights with full W&amp;B tracking.</li>
-        </ul>
-      </div>
-
-      <div class="card span-12">
-        <h2>References and Assets</h2>
-        <p class="mono">
-          Kaggle notebook: https://www.kaggle.com/code/godusssop/dl-23f2002518-notebook-t12026<br>
-          Final Kaggle score reference: 0.85477 (V26)<br>
-          GitHub repo: https://github.com/23f2002518/ml-web-project/<br>
-          W&amp;B entity/project target: 23f2002518-dl-genai-project / 23f2002518-t12026<br>
-          Hugging Face Space target: sachin-ray/messy-mashup-23f2002518
-        </p>
-      </div>
-    </section>
-  </div>
-</body>
-</html>
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="170" viewBox="0 0 920 170" role="img" aria-label="Project pipeline">
+  <rect width="920" height="170" rx="18" fill="#fff7ed"/>
+  <rect x="20" y="58" width="132" height="54" rx="14" fill="#fed7aa"/>
+  <rect x="188" y="58" width="162" height="54" rx="14" fill="#fdba74"/>
+  <rect x="386" y="58" width="164" height="54" rx="14" fill="#fb923c"/>
+  <rect x="586" y="58" width="136" height="54" rx="14" fill="#f97316"/>
+  <rect x="758" y="58" width="142" height="54" rx="14" fill="#ea580c"/>
+  <text x="86" y="91" text-anchor="middle" font-size="16">Stem folders</text>
+  <text x="269" y="91" text-anchor="middle" font-size="16">Mashup + ESC-50 noise</text>
+  <text x="468" y="91" text-anchor="middle" font-size="16">Mel / AST features</text>
+  <text x="654" y="91" text-anchor="middle" font-size="16">Three models</text>
+  <text x="829" y="91" text-anchor="middle" font-size="16">TTA ensemble</text>
+  <line x1="152" y1="85" x2="188" y2="85" stroke="#9a3412" stroke-width="3"/>
+  <line x1="350" y1="85" x2="386" y2="85" stroke="#9a3412" stroke-width="3"/>
+  <line x1="550" y1="85" x2="586" y2="85" stroke="#9a3412" stroke-width="3"/>
+  <line x1="722" y1="85" x2="758" y2="85" stroke="#9a3412" stroke-width="3"/>
+</svg>
 """
+
+
+def write_svg(path: Path, content: str) -> None:
+    path.write_text(content.strip() + "\n")
+
+
+def build_typst(histories: dict[str, list[tuple[int, float, float]]], distribution: Counter) -> str:
+    effnet_epoch, effnet_best = best_epoch(histories["effnet"])
+    ast_epoch, ast_best = best_epoch(histories["ast"])
+    total_predictions = sum(distribution.values())
+
+    distribution_rows = "\n".join(
+        f"  [{genre.title()}], [{distribution.get(genre, 0)}],"
+        for genre in GENRES
+    )
+    comparison_rows = "\n".join(
+        [
+            f"  [EfficientNet-B0], [`{effnet_best:.4f}`], [Pretrained CNN], "
+            f"[Best preserved archive run at epoch {effnet_epoch}; chosen for live deployment.],",
+            "  [Custom CNN + SE], [N/A], [From scratch], "
+            "[Code preserved in the notebook, but the local archive does not contain executed metric logs.],",
+            f"  [Audio Spectrogram Transformer], [`{ast_best:.4f}`], [Pretrained transformer], "
+            f"[Strong complementary archived run at epoch {ast_epoch}; retained for ensemble diversity.],",
+        ]
+    )
+
+    return textwrap.dedent(
+        f"""
+        #set page(width: 210mm, height: 297mm, margin: (x: 18mm, y: 16mm))
+        #set text(size: 10.6pt)
+        #set par(justify: true, leading: 0.7em)
+        #set heading(numbering: "1.")
+
+        #align(center)[#text(18pt, weight: "bold")[Messy Mashup]]
+        #align(center)[Sachin Kumar Ray (23F2002518)]
+        #align(center)[IITM BS in Data Science and Applications]
+
+        #v(0.8em)
+
+        #table(
+          columns: (2.2fr, 0.8fr, 3fr),
+          align: (left, center, left),
+          inset: 6pt,
+          stroke: rgb("#d7dee8"),
+          table.header([*Metric*], [*Value*], [*Evidence*]),
+          [Best archived EfficientNet val F1], [`{effnet_best:.4f}`], [Recovered from the executed Kaggle notebook archive and checkpoint bundle.],
+          [Best archived AST val F1], [`{ast_best:.4f}`], [Recovered from the same archived Kaggle execution snapshot.],
+          [Final Kaggle score], [`0.85477`], [Reference score from notebook version `V26` supplied by the student.],
+        )
+
+        = Abstract
+
+        This project addresses noisy music-genre classification for the IITM Deep Learning & Generative AI course project using the Messy Mashup Kaggle challenge. The final workflow combines synthetic mashup generation, ESC-50 noise injection, mel-spectrogram preprocessing, pretrained deep audio models, and test-time augmentation. The strongest preserved archived validation result comes from the EfficientNet-B0 model with macro-F1 `{effnet_best:.4f}`, while the final leaderboard reference used for submission reporting is `0.85477` from notebook version `V26`. The main conclusion is that robust spectrogram pipelines plus noise-aware augmentation are effective for this task, while deployment should serve a single lightweight model rather than the full ensemble.
+
+        = Introduction
+
+        The challenge is to predict one of ten music genres for each test clip in the Messy Mashup benchmark: blues, classical, country, disco, hiphop, jazz, metal, pop, reggae, and rock. Unlike clean single-source genre datasets, the test environment contains mixed and noisy audio, so the project objective was not only to train accurate classifiers but also to reduce train-test mismatch through synthetic mashups, ESC-50 noise mixing, and robust inference-time augmentation. The repository packages the complete submission stack: the canonical Kaggle notebook, Weights & Biases logging helpers, a final report generator, and a Hugging Face Space for live inference.
+
+        = Dataset & Preprocessing
+
+        The training data is organized as genre-wise stem folders, while the held-out test set is provided through the Kaggle competition interface. The local workflow uses a fixed sample rate of `16 kHz`, ten-second clips, and `128` mel bins for spectrogram generation. When clips are shorter than the target length, they are padded; otherwise they are trimmed to a fixed duration for consistent batching. Each waveform is peak-normalized before feature extraction.
+
+        #table(
+          columns: (1.5fr, 0.9fr, 2.6fr),
+          align: (left, center, left),
+          inset: 6pt,
+          stroke: rgb("#d7dee8"),
+          table.header([*Preprocessing step*], [*Value*], [*Purpose*]),
+          [Sample rate], [`16 kHz`], [Keeps the audio resolution manageable while preserving strong genre cues.],
+          [Clip length], [`10 s`], [Normalizes batch shape across training and inference.],
+          [Mel bins], [`128`], [Balances frequency detail and model size for spectrogram learning.],
+          [FFT / hop], [`1024 / 256`], [Captures enough temporal detail for rhythm-heavy genres.],
+          [Waveform normalization], [Peak], [Reduces loudness variation before spectrogram extraction.],
+        )
+
+        To bridge the gap between cleaner stems and noisier evaluation clips, the pipeline synthesizes mashups from genre stems and injects ESC-50 environmental noise. This step encourages the models to learn robust time-frequency cues instead of overfitting to clean single-track statistics. The final Kaggle inference path also uses test-time augmentation so that predictions are averaged across multiple views of each example rather than relying on a single spectrogram crop.
+
+        #figure(
+          image("figures/pipeline.svg", width: 100%),
+          caption: [Training and inference pipeline from stem folders to the final TTA ensemble.]
+        )
+
+        = Modeling & Experimentation
+
+        == Model 1: EfficientNet-B0
+
+        EfficientNet-B0 is the strongest preserved archived model in the current workspace and the best candidate for live CPU deployment. The model operates on mel-spectrogram inputs and benefits from pretrained image-model inductive biases that transfer well to spectrogram classification. In the archived notebook run, the best preserved validation macro-F1 is `{effnet_best:.4f}` at epoch `{effnet_epoch}`. Because this model combines strong validation quality with moderate inference cost, it was given the largest weight in the final Kaggle ensemble and selected as the serving model for Hugging Face Spaces.
+
+        #figure(
+          image("figures/effnet_curve.svg", width: 100%),
+          caption: [EfficientNet-B0 train and validation macro-F1 extracted from the archived Kaggle notebook execution.]
+        )
+
+        == Model 2: Custom CNN With Squeeze-and-Excitation
+
+        The from-scratch baseline is a custom convolutional neural network that stacks mel-spectrogram convolution blocks with squeeze-and-excitation recalibration, followed by global average pooling and a compact fully connected head. This model satisfies the course requirement to include a model built from scratch and acts as an interpretable baseline for comparing handcrafted architecture choices against pretrained alternatives. The local archive retains the code path and design, but not the executed metric logs, so the report explicitly distinguishes between implemented architecture and archived evidence instead of inventing missing numbers.
+
+        #figure(
+          image("figures/custom_cnn_architecture.svg", width: 100%),
+          caption: [Custom CNN architecture used as the from-scratch baseline in the canonical notebook.]
+        )
+
+        == Model 3: Audio Spectrogram Transformer
+
+        The Audio Spectrogram Transformer (AST) serves as the pretrained transformer baseline. AST models long-range relationships on spectrogram patches using self-attention, which is useful when genre information is distributed across broader time-frequency patterns rather than localized events. In the preserved local archive, the best AST validation macro-F1 is `{ast_best:.4f}` at epoch `{ast_epoch}`. Although AST was not selected as the live deployment model because of higher compute cost, it contributed architectural diversity to the offline ensemble.
+
+        #figure(
+          image("figures/ast_curve.svg", width: 100%),
+          caption: [AST train and validation macro-F1 extracted from the archived Kaggle notebook execution.]
+        )
+
+        = Performance & Comparative Analysis
+
+        Macro-F1 is the primary competition metric and the most relevant evaluation signal because it balances performance across all ten genres instead of letting frequent classes dominate. The table below summarizes the final model set and the evidence preserved in the current local archive.
+
+        #table(
+          columns: (1.6fr, 0.9fr, 1fr, 3fr),
+          align: (left, center, left, left),
+          inset: 6pt,
+          stroke: rgb("#d7dee8"),
+          table.header([*Model*], [*Best val F1*], [*Type*], [*Remarks*]),
+        {comparison_rows}
+        )
+
+        The final Kaggle submission path uses a weighted ensemble with greater emphasis on EfficientNet because it achieved the strongest preserved validation result, while AST contributes diversity. The custom CNN remains essential for viva authenticity and architectural comparison even though its archived execution metrics were not retained locally. The final leaderboard reference used in this report is `0.85477` from notebook version `V26`.
+
+        The genre counts in the bundled `submission.csv` indicate how the final inference pipeline distributed predictions across the evaluation set. This does not prove class correctness, but it is useful for spotting extreme collapse into a small subset of labels.
+
+        #table(
+          columns: (1fr, 0.6fr),
+          align: (left, center),
+          inset: 6pt,
+          stroke: rgb("#d7dee8"),
+          table.header([*Genre*], [*Predictions*]),
+        {distribution_rows}
+        )
+
+        Total predictions in the archived submission file: `{total_predictions}`.
+
+        = Experiment Tracking & Reproducibility
+
+        The project is structured around reproducibility rather than single-use notebook execution. The repository preserves the canonical Kaggle notebook, a backfill utility for Weights & Biases logging, and a deterministic report generator that rebuilds the final write-up directly from the archived notebook outputs and the bundled `results.zip`. This approach makes the final report auditable: every metric quoted in the document comes from the preserved local snapshot or is explicitly labeled as student-supplied leaderboard evidence.
+
+        The intended experiment tracking target is the Weights & Biases project `23f2002518-t12026` under the entity `23f2002518-dl-genai-project`. The archived notebook snapshot includes preserved EfficientNet and AST training traces, while the custom CNN remains present as code and architecture in the notebook even though its executed local metrics were not retained in the available archive. This distinction is important for viva authenticity, because it clarifies which evidence is directly reproducible from the current workspace and which components are ready for rerun.
+
+        == Deployment Note
+
+        The Hugging Face Space intentionally serves only the EfficientNet-B0 checkpoint rather than the full offline ensemble. This keeps latency reasonable on CPU hardware while preserving a model that already performed strongly in the archived validation logs. The Space reproduces the same mel-spectrogram preprocessing, returns ranked class probabilities, and acts as a public demonstration layer rather than a leaderboard-optimized inference pipeline.
+
+        #pagebreak()
+
+        = Challenges Faced
+
+        The main technical challenge was mismatch between clean training stems and the noisy, mixed evaluation setting. A second challenge was evidence preservation: the current local archive contains strong EfficientNet and AST runs, but not the executed scratch-model metric history. The third challenge was engineering rather than modeling: the original HTML-to-PDF report layout was visually unstable, and the initial Space app used a Gradio output path that failed in hosted runtime schema generation.
+
+        These issues were handled conservatively. The report generator was rewritten around Typst for page-stable academic output, while the Space UI was simplified to components that are more robust on Hugging Face Spaces. Throughout the repository, the guiding principle is to stay honest about the archive contents rather than fill missing numbers with invented results.
+
+        = Conclusion & Future Work
+
+        The strongest lesson from this project is that matching the competition's noisy evaluation setting matters as much as backbone choice. ESC-50 noise injection, synthetic mashup generation, and TTA all target the real source of difficulty: genre recognition under overlap and contamination. Pretrained spectrogram models proved highly effective, while the from-scratch CNN remains valuable for transparency and viva readiness. The main limitation of the current local archive is missing executed metrics for the custom CNN run, so the report stays explicit about what was preserved versus what could be rerun.
+
+        Future improvements are clear: rerun the scratch model with full W&B logging, calibrate ensemble weights on a stronger validation protocol, explore waveform-native or hybrid models, and add a richer error analysis with confusion matrices and audio exemplars. For deployment, a future revision could add top-k probability plots or confidence-threshold warnings while keeping the live app lightweight enough for CPU hosting.
+
+        = References
+
+        + Tan, M., and Le, Q. V. EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks. ICML, 2019.
+        + Gong, Y., Chung, Y.-A., and Glass, J. AST: Audio Spectrogram Transformer. Interspeech, 2021.
+        + Hu, J., Shen, L., and Sun, G. Squeeze-and-Excitation Networks. CVPR, 2018.
+        + Piczak, K. J. ESC: Dataset for Environmental Sound Classification. ACM Multimedia, 2015.
+        + Kaggle notebook reference: #link("https://www.kaggle.com/code/godusssop/dl-23f2002518-notebook-t12026")[dl-23f2002518-notebook-t12026].
+        + GitHub repository: #link("https://github.com/23f2002518/ml-web-project/")[23f2002518/ml-web-project].
+        + Hugging Face Space: #link("https://huggingface.co/spaces/sachin-ray/messy-mashup-23f2002518")[sachin-ray/messy-mashup-23f2002518].
+        """
+    ).strip() + "\n"
+
+
+def resolve_typst_binary(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    binary = shutil.which("typst")
+    if not binary:
+        raise SystemExit(
+            "Typst compiler not found. Install typst or pass --typst-bin /path/to/typst."
+        )
+    return binary
+
+
+def compile_typst(typst_bin: str, report_typ: Path, output_pdf: Path) -> None:
+    subprocess.run(
+        [typst_bin, "compile", str(report_typ), str(output_pdf)],
+        check=True,
+    )
 
 
 def main() -> None:
@@ -447,19 +408,46 @@ def main() -> None:
         type=Path,
         default=Path("report/generated"),
     )
+    parser.add_argument(
+        "--typst-bin",
+        type=str,
+        default=None,
+        help="Path to the Typst compiler binary. Falls back to `typst` on PATH.",
+    )
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    figures_dir = args.output_dir / "figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
 
     notebook = load_notebook(args.archive_notebook)
     histories = extract_histories(notebook)
     distribution = extract_submission_distribution(args.results_zip)
-    html = build_report_html(histories, distribution)
 
-    output_html = args.output_dir / "report.html"
-    output_html.write_text(html)
-    print(output_html)
-    print(args.output_dir / "23f2002518_DG_T12026.pdf")
+    write_svg(
+        figures_dir / "effnet_curve.svg",
+        sparkline_svg(histories["effnet"], "EfficientNet F1 progression", "#2563eb", "#0f766e"),
+    )
+    write_svg(
+        figures_dir / "ast_curve.svg",
+        sparkline_svg(histories["ast"], "AST F1 progression", "#7c3aed", "#ea580c"),
+    )
+    write_svg(figures_dir / "custom_cnn_architecture.svg", architecture_svg())
+    write_svg(figures_dir / "pipeline.svg", pipeline_svg())
+
+    report_typ = args.output_dir / "report.typ"
+    report_typ.write_text(build_typst(histories, distribution))
+
+    report_html = args.output_dir / "report.html"
+    report_html.write_text(REPORT_HTML_NOTICE)
+
+    output_pdf = args.output_dir / "23f2002518_DG_T12026.pdf"
+    typst_bin = resolve_typst_binary(args.typst_bin)
+    compile_typst(typst_bin, report_typ, output_pdf)
+
+    print(report_typ)
+    print(report_html)
+    print(output_pdf)
 
 
 if __name__ == "__main__":

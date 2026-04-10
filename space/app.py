@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
 
 import gradio as gr
 import librosa
 import numpy as np
-import pandas as pd
 import timm
 import torch
 import torch.nn as nn
+from gradio_client import utils as gradio_client_utils
 
 
 GENRES = [
@@ -31,6 +33,25 @@ N_MELS = 128
 N_FFT = 1024
 HOP = 256
 CHECKPOINT_PATH = Path(__file__).resolve().parent / "artifacts" / "effnet_f1.pt"
+
+
+def patch_gradio_schema_bug() -> None:
+    """Handle Gradio's boolean-schema bug for file/audio components on Spaces."""
+    if getattr(gradio_client_utils, "_messy_mashup_schema_patch", False):
+        return
+
+    original_get_type = gradio_client_utils.get_type
+
+    def patched_get_type(schema):
+        if isinstance(schema, bool):
+            return "boolean"
+        return original_get_type(schema)
+
+    gradio_client_utils.get_type = patched_get_type
+    gradio_client_utils._messy_mashup_schema_patch = True
+
+
+patch_gradio_schema_bug()
 
 
 class EfficientNetClassifier(nn.Module):
@@ -81,9 +102,7 @@ def to_mel(audio: np.ndarray) -> np.ndarray:
 
 def load_model() -> EfficientNetClassifier:
     if not CHECKPOINT_PATH.exists():
-        raise FileNotFoundError(
-            f"Checkpoint not found at {CHECKPOINT_PATH}. Add effnet_f1.pt before publishing the Space."
-        )
+        raise FileNotFoundError(f"Checkpoint not found at {CHECKPOINT_PATH}.")
     model = EfficientNetClassifier(num_classes=len(GENRES))
     state_dict = torch.load(CHECKPOINT_PATH, map_location="cpu")
     model.load_state_dict(state_dict)
@@ -100,7 +119,7 @@ except Exception as exc:  # pragma: no cover
     MODEL_LOAD_ERROR = str(exc)
 
 
-def predict(audio_file: str) -> tuple[str, pd.DataFrame, str]:
+def predict(audio_file: str) -> tuple[dict[str, float], str, str]:
     if MODEL_LOAD_ERROR:
         raise gr.Error(MODEL_LOAD_ERROR)
     if not audio_file:
@@ -116,18 +135,20 @@ def predict(audio_file: str) -> tuple[str, pd.DataFrame, str]:
 
     top_index = int(np.argmax(probs))
     label = GENRES[top_index]
-    table = pd.DataFrame(
-        {
-            "genre": GENRES,
-            "probability": probs,
-        }
-    ).sort_values("probability", ascending=False, ignore_index=True)
+    ranking = {
+        genre: float(prob)
+        for genre, prob in sorted(
+            zip(GENRES, probs),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+    }
     summary = (
         f"Predicted genre: {label}\n\n"
         f"Top confidence: {probs[top_index]:.4f}\n"
         f"Model: EfficientNet-B0 spectrogram classifier"
     )
-    return label, table, summary
+    return ranking, json.dumps(ranking, indent=2), summary
 
 
 with gr.Blocks(title="Messy Mashup") as demo:
@@ -144,23 +165,20 @@ with gr.Blocks(title="Messy Mashup") as demo:
         audio_input = gr.Audio(type="filepath", label="Audio clip")
 
     with gr.Row():
-        label_output = gr.Textbox(label="Predicted genre")
+        label_output = gr.Label(label="Genre ranking", num_top_classes=len(GENRES))
+        json_output = gr.Textbox(label="Probability JSON", lines=12, show_copy_button=True)
         summary_output = gr.Textbox(label="Summary")
-
-    confidence_table = gr.Dataframe(
-        headers=["genre", "probability"],
-        datatype=["str", "number"],
-        label="Confidence scores",
-        interactive=False,
-    )
 
     submit = gr.Button("Predict")
     submit.click(
         fn=predict,
         inputs=[audio_input],
-        outputs=[label_output, confidence_table, summary_output],
+        outputs=[label_output, json_output, summary_output],
     )
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.getenv("PORT", "7860")),
+    )
