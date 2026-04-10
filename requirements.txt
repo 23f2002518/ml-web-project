@@ -1,0 +1,14 @@
+gradio>=4.44,<5
+librosa>=0.10.2
+matplotlib>=3.8
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.5
+soundfile>=0.12.1
+timm>=1.0.9
+torch>=2.2
+torchaudio>=2.2
+tqdm>=4.66
+transformers>=4.45
+wandb>=0.18
+weasyprint>=62
