@@ -1,24 +1,35 @@
 #set page(width: 210mm, height: 297mm, margin: (x: 18mm, y: 16mm))
       #set text(size: 10.6pt)
-      #set par(justify: true, leading: 0.7em)
+      #set par(
+        justify: true,
+        leading: 0.8em,
+        spacing: 0.5em,
+        first-line-indent: 1.35em,
+      )
       #set heading(numbering: "1.")
+      #show heading.where(level: 1): it => block(above: 1.2em, below: 0.55em)[#it]
+      #show heading.where(level: 2): it => block(above: 0.95em, below: 0.35em)[#it]
+      #show figure.caption: set text(size: 9.2pt, fill: rgb("#4b5563"))
 
       #align(center)[#text(18pt, weight: "bold")[Messy Mashup]]
       #align(center)[Sachin Kumar Ray (23F2002518)]
       #align(center)[IITM BS in Data Science and Applications]
 
-      #v(0.8em)
+      #v(1em)
 
       #table(
         columns: (2.2fr, 0.8fr, 3fr),
         align: (left, center, left),
-        inset: 6pt,
+        inset: 7pt,
         stroke: rgb("#d7dee8"),
+        fill: (x, y) => if y == 0 { rgb("#f5f7fb") } else { white },
         table.header([*Metric*], [*Value*], [*Evidence*]),
         [Best archived EfficientNet val F1], [`0.9603`], [Recovered from the executed Kaggle notebook archive and checkpoint bundle.],
         [Best archived AST val F1], [`0.9397`], [Recovered from the same archived Kaggle execution snapshot.],
-        [Final Kaggle score], [`0.85477`], [Reference score from notebook version `V26` supplied by the student.],
+        [Final Kaggle score], [`0.85477`], [Reference score recorded in notebook version `V26`.],
       )
+
+      #v(0.75em)
 
       = Abstract
 
@@ -35,8 +46,9 @@
       #table(
         columns: (1.5fr, 0.9fr, 2.6fr),
         align: (left, center, left),
-        inset: 6pt,
+        inset: 7pt,
         stroke: rgb("#d7dee8"),
+        fill: (x, y) => if y == 0 { rgb("#f5f7fb") } else { white },
         table.header([*Preprocessing step*], [*Value*], [*Purpose*]),
         [Sample rate], [`16 kHz`], [Keeps the audio resolution manageable while preserving strong genre cues.],
         [Clip length], [`10 s`], [Normalizes batch shape across training and inference.],
@@ -45,12 +57,16 @@
         [Waveform normalization], [Peak], [Reduces loudness variation before spectrogram extraction.],
       )
 
+      #v(0.35em)
+
       To bridge the gap between cleaner stems and noisier evaluation clips, the pipeline synthesizes mashups from genre stems and injects ESC-50 environmental noise. This step encourages the models to learn robust time-frequency cues instead of overfitting to clean single-track statistics. The final Kaggle inference path also uses test-time augmentation so that predictions are averaged across multiple views of each example rather than relying on a single spectrogram crop.
 
       #figure(
         image("figures/pipeline.svg", width: 100%),
         caption: [Training and inference pipeline from stem folders to the final TTA ensemble.]
       )
+
+      #v(0.35em)
 
       = Modeling & Experimentation
 
@@ -63,6 +79,8 @@
         caption: [EfficientNet-B0 train and validation macro-F1 extracted from the archived Kaggle notebook execution.]
       )
 
+      #v(0.35em)
+
       == Model 2: Custom CNN With Squeeze-and-Excitation
 
       The from-scratch baseline is a custom convolutional neural network that stacks mel-spectrogram convolution blocks with squeeze-and-excitation recalibration, followed by global average pooling and a compact fully connected head. This model satisfies the course requirement to include a model built from scratch and acts as an interpretable baseline for comparing handcrafted architecture choices against pretrained alternatives. The local archive retains the code path and design, but not the executed metric logs, so the report explicitly distinguishes between implemented architecture and archived evidence instead of inventing missing numbers.
@@ -71,6 +89,8 @@
         image("figures/custom_cnn_architecture.svg", width: 100%),
         caption: [Custom CNN architecture used as the from-scratch baseline in the canonical notebook.]
       )
+
+      #v(0.35em)
 
       == Model 3: Audio Spectrogram Transformer
 
@@ -81,6 +101,8 @@
         caption: [AST train and validation macro-F1 extracted from the archived Kaggle notebook execution.]
       )
 
+      #v(0.35em)
+
       = Performance & Comparative Analysis
 
       Macro-F1 is the primary competition metric and the most relevant evaluation signal because it balances performance across all ten genres instead of letting frequent classes dominate. The table below summarizes the final model set and the evidence preserved in the current local archive.
@@ -88,13 +110,16 @@
       #table(
         columns: (1.6fr, 0.9fr, 1fr, 3fr),
         align: (left, center, left, left),
-        inset: 6pt,
+        inset: 7pt,
         stroke: rgb("#d7dee8"),
+        fill: (x, y) => if y == 0 { rgb("#f5f7fb") } else { white },
         table.header([*Model*], [*Best val F1*], [*Type*], [*Remarks*]),
         [EfficientNet-B0], [`0.9603`], [Pretrained CNN], [Best preserved archive run at epoch 26; chosen for live deployment.],
 [Custom CNN + SE], [N/A], [From scratch], [Code preserved in the notebook, but the local archive does not contain executed metric logs.],
 [Audio Spectrogram Transformer], [`0.9397`], [Pretrained transformer], [Strong complementary archived run at epoch 17; retained for ensemble diversity.],
       )
+
+      #v(0.35em)
 
       The final Kaggle submission path uses a weighted ensemble with greater emphasis on EfficientNet because it achieved the strongest preserved validation result, while AST contributes diversity. The custom CNN remains essential for viva authenticity and architectural comparison even though its archived execution metrics were not retained locally. The final leaderboard reference used in this report is `0.85477` from notebook version `V26`.
 
@@ -103,8 +128,9 @@
       #table(
         columns: (1fr, 0.6fr),
         align: (left, center),
-        inset: 6pt,
+        inset: 7pt,
         stroke: rgb("#d7dee8"),
+        fill: (x, y) => if y == 0 { rgb("#f5f7fb") } else { white },
         table.header([*Genre*], [*Predictions*]),
         [Blues], [281],
 [Classical], [333],
@@ -118,11 +144,13 @@
 [Rock], [357],
       )
 
+      #v(0.25em)
+
       Total predictions in the archived submission file: `3020`.
 
       = Experiment Tracking & Reproducibility
 
-      The project is structured around reproducibility rather than single-use notebook execution. The repository preserves the canonical Kaggle notebook, a backfill utility for Weights & Biases logging, and a deterministic report generator that rebuilds the final write-up directly from the archived notebook outputs and the bundled `results.zip`. This approach makes the final report auditable: every metric quoted in the document comes from the preserved local snapshot or is explicitly labeled as student-supplied leaderboard evidence.
+      The project is structured around reproducibility rather than single-use notebook execution. The repository preserves the canonical Kaggle notebook, a backfill utility for Weights & Biases logging, and a deterministic report generator that rebuilds the final write-up directly from the archived notebook outputs and the bundled `results.zip`. This approach makes the final report auditable: every metric quoted in the document comes from the preserved local snapshot or is explicitly labeled as documented leaderboard evidence.
 
       The intended experiment tracking target is the Weights & Biases project `23f2002518-t12026` under the entity `23f2002518-dl-genai-project`. The archived notebook snapshot includes preserved EfficientNet and AST training traces, while the custom CNN remains present as code and architecture in the notebook even though its executed local metrics were not retained in the available archive. This distinction is important for viva authenticity, because it clarifies which evidence is directly reproducible from the current workspace and which components are ready for rerun.
 
