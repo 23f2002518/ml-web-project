@@ -161,6 +161,7 @@ def main() -> None:
             row["val_f1"] for row in histories["ast-transformer"]
         )
     wandb.summary["comparison/customcnn_best_val_f1"] = None
+    wandb.summary["comparison/customcnn_archived_metrics_available"] = False
     wandb.summary["comparison/customcnn_status"] = "needs_rerun"
     wandb.finish()
 

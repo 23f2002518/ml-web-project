@@ -40,7 +40,11 @@ The final submission workflow uses:
 │   └── generated/
 ├── scripts/
 │   ├── backfill_wandb_from_archive.py
-│   └── generate_report.py
+│   ├── error_analysis.py
+│   ├── generate_report.py
+│   ├── project_pipeline.py
+│   ├── run_inference.py
+│   └── train_models.py
 ├── space/
 │   ├── app.py
 │   ├── README.md
@@ -54,6 +58,10 @@ The final submission workflow uses:
 
 - Canonical training notebook: [notebooks/dl-23f2002518-notebook-t12026.ipynb](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/notebooks/dl-23f2002518-notebook-t12026.ipynb)
 - W&B archival logger: [scripts/backfill_wandb_from_archive.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/scripts/backfill_wandb_from_archive.py)
+- Shared training/inference module: [scripts/project_pipeline.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/scripts/project_pipeline.py)
+- Scripted trainer: [scripts/train_models.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/scripts/train_models.py)
+- Scripted inference: [scripts/run_inference.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/scripts/run_inference.py)
+- Error-analysis script: [scripts/error_analysis.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/scripts/error_analysis.py)
 - Report generator: [scripts/generate_report.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/scripts/generate_report.py)
 - Hugging Face Space app: [space/app.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/space/app.py)
 - Manual submission answers: [submission_packet.md](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/submission_packet.md)
@@ -75,6 +83,34 @@ The notebook expects the Kaggle dataset layout:
 ├── genres_stems/
 ├── ESC-50-master/audio/
 └── test.csv
+```
+
+The repository now exposes the same pipeline through scripts as well, so preprocessing, training, inference, and error analysis are no longer notebook-only concerns.
+
+Run the full scripted training workflow with:
+
+```bash
+python scripts/train_models.py \
+  --base /kaggle/input/jan-2026-dl-gen-ai-project/messy_mashup \
+  --output-dir artifacts/training
+```
+
+Generate a submission from saved checkpoints with:
+
+```bash
+python scripts/run_inference.py \
+  --base /kaggle/input/jan-2026-dl-gen-ai-project/messy_mashup \
+  --checkpoint-dir artifacts/training \
+  --submission-out artifacts/inference/submission.csv
+```
+
+Produce validation-side error analysis with:
+
+```bash
+python scripts/error_analysis.py \
+  --base /kaggle/input/jan-2026-dl-gen-ai-project/messy_mashup \
+  --checkpoint-dir artifacts/training \
+  --model efficientnet-b0
 ```
 
 ## W&B Logging
@@ -101,6 +137,8 @@ python scripts/backfill_wandb_from_archive.py \
 ```
 
 This recreates the preserved EfficientNet and AST runs from the archived notebook output. The custom CNN run is scaffolded from notebook metadata when no executed scratch-model metrics are present in the local snapshot.
+
+For a fully valid scratch-model comparison in W&B, rerun the custom CNN through [scripts/train_models.py](/home/omegatron/Downloads/Kaggle/DL%20GENAI/Messy%20Mashup/ml-web-project/scripts/train_models.py). The archival script stays honest about the local evidence and does not invent missing custom-CNN metrics.
 
 ## Report Generation
 
@@ -144,5 +182,6 @@ git push origin main
 ## Notes
 
 - The archived local snapshot contains real EfficientNet and AST checkpoints plus a final `submission.csv`.
-- The scratch-model code path is preserved in the notebook, but its executed metrics were not included in the local Kaggle archive that was available in this workspace.
+- The scratch-model code path is preserved in both the notebook and the new script-based pipeline, but its executed metrics were not included in the local Kaggle archive that was available in this workspace.
+- The new script layout is meant to strengthen viva readiness: preprocessing, training, inference, and error analysis can now be walked through outside the notebook as well.
 - The project is structured so the report and repo stay honest about which results were directly preserved versus which components are prepared for rerun.
