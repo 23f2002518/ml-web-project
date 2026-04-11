@@ -382,8 +382,6 @@ def build_typst(histories: dict[str, list[tuple[int, float, float]]], distributi
 
         The Hugging Face Space intentionally serves only the EfficientNet-B0 checkpoint rather than the full offline ensemble. This keeps latency reasonable on CPU hardware while preserving a model that already performed strongly in the archived validation logs. The Space reproduces the same mel-spectrogram preprocessing, returns ranked class probabilities, and acts as a public demonstration layer rather than a leaderboard-optimized inference pipeline.
 
-        #pagebreak()
-
         = Challenges Faced
 
         The main technical challenge was mismatch between clean training stems and the noisy, mixed evaluation setting. A second challenge was evidence preservation: the current local archive contains strong EfficientNet and AST runs, but not the executed scratch-model metric history. The third challenge was engineering rather than modeling: the original HTML-to-PDF report layout was visually unstable, and the initial Space app used a Gradio output path that failed in hosted runtime schema generation.
